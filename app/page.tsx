@@ -76,27 +76,29 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="grid flex-1 gap-6 lg:grid-cols-2">
-        <CanvasPreview
-          imageUrl={imageUrl}
-          settings={settings}
-          mode="full"
-          title="左侧原图 / 网格区域框选"
-          onGridAreaSelect={handleGridAreaSelect}
-        />
-        <CanvasPreview
-          imageUrl={imageUrl}
-          settings={settings}
-          mode="grid"
-          title="右侧网格拆分预览"
-          selectedCell={selectedCell}
-          onSelectedCellChange={setSelectedCell}
-        />
-      </div>
+      <div className="grid flex-1 gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:items-start">
+        <div className="grid gap-6">
+          <CanvasPreview
+            imageUrl={imageUrl}
+            settings={settings}
+            mode="full"
+            title="左侧原图 / 网格区域框选"
+            onGridAreaSelect={handleGridAreaSelect}
+          />
+          <GridControls settings={settings} onChange={setSettings} />
+        </div>
 
-      <div className="grid gap-6">
-        <GridControls settings={settings} onChange={setSettings} />
-        <ExportPanel imageUrl={imageUrl} settings={settings} selectedCell={selectedCell} />
+        <div className="grid gap-6">
+          <CanvasPreview
+            imageUrl={imageUrl}
+            settings={settings}
+            mode="grid"
+            title="右侧网格拆分预览"
+            selectedCell={selectedCell}
+            onSelectedCellChange={setSelectedCell}
+          />
+          <ExportPanel imageUrl={imageUrl} settings={settings} selectedCell={selectedCell} />
+        </div>
       </div>
     </main>
   );
