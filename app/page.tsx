@@ -5,7 +5,7 @@ import { CanvasPreview } from '@/components/CanvasPreview';
 import { ExportPanel } from '@/components/ExportPanel';
 import { GridControls } from '@/components/GridControls';
 import { ImageUploader } from '@/components/ImageUploader';
-import type { GridCell, GridSettings } from '@/lib/grid';
+import type { GridCell, GridSettings, Rect } from '@/lib/grid';
 
 const defaultSettings: GridSettings = {
   originX: 0,
@@ -41,6 +41,24 @@ export default function Home() {
     setSelectedCell(null);
   };
 
+  const handleGridAreaSelect = (rect: Rect) => {
+    setSettings((currentSettings) => {
+      const cols = Math.max(1, currentSettings.cols);
+      const rows = Math.max(1, currentSettings.rows);
+      const availableWidth = Math.max(1, rect.width - currentSettings.gapX * Math.max(0, cols - 1));
+      const availableHeight = Math.max(1, rect.height - currentSettings.gapY * Math.max(0, rows - 1));
+
+      return {
+        ...currentSettings,
+        originX: Math.round(rect.x),
+        originY: Math.round(rect.y),
+        cellWidth: Math.max(1, Math.round(availableWidth / cols)),
+        cellHeight: Math.max(1, Math.round(availableHeight / rows))
+      };
+    });
+    setSelectedCell(null);
+  };
+
   return (
     <main className="mx-auto flex min-h-screen max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
       <header className="rounded-[2rem] bg-white/80 p-6 shadow-panel ring-1 ring-slate-200/70 backdrop-blur">
@@ -59,7 +77,13 @@ export default function Home() {
       </header>
 
       <div className="grid flex-1 gap-6 lg:grid-cols-2">
-        <CanvasPreview imageUrl={imageUrl} settings={settings} mode="full" title="左侧完整角色预览" />
+        <CanvasPreview
+          imageUrl={imageUrl}
+          settings={settings}
+          mode="full"
+          title="左侧原图 / 网格区域框选"
+          onGridAreaSelect={handleGridAreaSelect}
+        />
         <CanvasPreview
           imageUrl={imageUrl}
           settings={settings}

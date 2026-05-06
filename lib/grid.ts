@@ -18,6 +18,13 @@ export type GridCell = {
   height: number;
 };
 
+export type Rect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 const positiveInteger = (value: number) => Math.max(0, Math.floor(Number.isFinite(value) ? value : 0));
 
 export function getGridCells({
@@ -50,4 +57,18 @@ export function getGridCells({
   }
 
   return cells;
+}
+
+export function getGridBounds(settings: GridSettings): Rect {
+  const safeRows = positiveInteger(settings.rows);
+  const safeCols = positiveInteger(settings.cols);
+  const safeCellWidth = Math.max(1, settings.cellWidth);
+  const safeCellHeight = Math.max(1, settings.cellHeight);
+
+  return {
+    x: settings.originX,
+    y: settings.originY,
+    width: safeCols * safeCellWidth + Math.max(0, safeCols - 1) * settings.gapX,
+    height: safeRows * safeCellHeight + Math.max(0, safeRows - 1) * settings.gapY
+  };
 }

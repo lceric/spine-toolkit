@@ -1,7 +1,7 @@
 'use client';
 
 import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { getGridCells, type GridCell, type GridSettings } from '@/lib/grid';
+import { getGridBounds, getGridCells, type GridCell, type GridSettings, type Rect } from '@/lib/grid';
 
 type CanvasPreviewProps = {
   imageUrl?: string;
@@ -10,10 +10,76 @@ type CanvasPreviewProps = {
   title: string;
   selectedCell?: GridCell | null;
   onSelectedCellChange?: (cell: GridCell | null) => void;
+  onGridAreaSelect?: (rect: Rect) => void;
 };
+
+type ImageTransform = {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+  drawWidth: number;
+  drawHeight: number;
+};
+
+type PreviewCell = GridCell & Rect;
 
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 720;
+const PREVIEW_PADDING = 28;
+const PREVIEW_GAP = 12;
+
+const getImageTransform = (canvas: HTMLCanvasElement, image: HTMLImageElement): ImageTransform => {
+  const scale = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
+  const drawWidth = image.naturalWidth * scale;
+  const drawHeight = image.naturalHeight * scale;
+
+  return {
+    scale,
+    drawWidth,
+    drawHeight,
+    offsetX: (canvas.width - drawWidth) / 2,
+    offsetY: (canvas.height - drawHeight) / 2
+  };
+};
+
+const normalizeRect = (start: Rect, end: Rect): Rect => ({
+  x: Math.min(start.x, end.x),
+  y: Math.min(start.y, end.y),
+  width: Math.abs(end.x - start.x),
+  height: Math.abs(end.y - start.y)
+});
+
+const getCanvasPoint = (event: MouseEvent<HTMLCanvasElement>) => {
+  const canvas = event.currentTarget;
+  const rect = canvas.getBoundingClientRect();
+
+  return {
+    x: (event.clientX - rect.left) * (canvas.width / rect.width),
+    y: (event.clientY - rect.top) * (canvas.height / rect.height)
+  };
+};
+
+const getGridPreviewCells = (canvas: HTMLCanvasElement, cells: GridCell[], settings: GridSettings): PreviewCell[] => {
+  const rows = Math.max(1, Math.floor(settings.rows));
+  const cols = Math.max(1, Math.floor(settings.cols));
+  const cellWidth = Math.max(1, settings.cellWidth);
+  const cellHeight = Math.max(1, settings.cellHeight);
+  const availableWidth = canvas.width - PREVIEW_PADDING * 2 - PREVIEW_GAP * Math.max(0, cols - 1);
+  const availableHeight = canvas.height - PREVIEW_PADDING * 2 - PREVIEW_GAP * Math.max(0, rows - 1);
+  const previewScale = Math.min(availableWidth / (cols * cellWidth), availableHeight / (rows * cellHeight));
+  const previewWidth = cols * cellWidth * previewScale + PREVIEW_GAP * Math.max(0, cols - 1);
+  const previewHeight = rows * cellHeight * previewScale + PREVIEW_GAP * Math.max(0, rows - 1);
+  const startX = (canvas.width - previewWidth) / 2;
+  const startY = (canvas.height - previewHeight) / 2;
+
+  return cells.map((cell) => ({
+    ...cell,
+    x: startX + cell.col * (cellWidth * previewScale + PREVIEW_GAP),
+    y: startY + cell.row * (cellHeight * previewScale + PREVIEW_GAP),
+    width: cell.width * previewScale,
+    height: cell.height * previewScale
+  }));
+};
 
 export function CanvasPreview({
   imageUrl,
@@ -21,12 +87,16 @@ export function CanvasPreview({
   mode,
   title,
   selectedCell,
-  onSelectedCellChange
+  onSelectedCellChange,
+  onGridAreaSelect
 }: CanvasPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [hoveredCell, setHoveredCell] = useState<GridCell | null>(null);
+  const [dragStart, setDragStart] = useState<Rect | null>(null);
+  const [dragCurrent, setDragCurrent] = useState<Rect | null>(null);
   const cells = useMemo(() => getGridCells(settings), [settings]);
+  const gridBounds = useMemo(() => getGridBounds(settings), [settings]);
 
   useEffect(() => {
     if (!imageUrl) {
@@ -58,65 +128,155 @@ export function CanvasPreview({
       return;
     }
 
-    const scale = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
-    const drawWidth = image.naturalWidth * scale;
-    const drawHeight = image.naturalHeight * scale;
-    const offsetX = (canvas.width - drawWidth) / 2;
-    const offsetY = (canvas.height - drawHeight) / 2;
-
-    context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
-
     if (mode === 'grid') {
-      context.save();
-      context.translate(offsetX, offsetY);
-      context.scale(scale, scale);
+      const previewCells = getGridPreviewCells(canvas, cells, settings);
 
-      cells.forEach((cell) => {
+      previewCells.forEach((previewCell) => {
+        const sourceCell = cells.find((cell) => cell.row === previewCell.row && cell.col === previewCell.col);
+        if (!sourceCell) {
+          return;
+        }
+
         const active =
-          (hoveredCell?.row === cell.row && hoveredCell?.col === cell.col) ||
-          (selectedCell?.row === cell.row && selectedCell?.col === cell.col);
+          (hoveredCell?.row === sourceCell.row && hoveredCell?.col === sourceCell.col) ||
+          (selectedCell?.row === sourceCell.row && selectedCell?.col === sourceCell.col);
 
-        context.fillStyle = active ? 'rgba(99, 102, 241, 0.28)' : 'rgba(14, 165, 233, 0.08)';
+        context.save();
+        context.fillStyle = active ? 'rgba(99, 102, 241, 0.18)' : '#ffffff';
         context.strokeStyle = active ? '#f97316' : '#2563eb';
-        context.lineWidth = active ? 3 / scale : 1.5 / scale;
-        context.fillRect(cell.x, cell.y, cell.width, cell.height);
-        context.strokeRect(cell.x, cell.y, cell.width, cell.height);
+        context.lineWidth = active ? 4 : 2;
+        context.shadowColor = 'rgba(15, 23, 42, 0.12)';
+        context.shadowBlur = 14;
+        context.shadowOffsetY = 8;
+        context.fillRect(previewCell.x, previewCell.y, previewCell.width, previewCell.height);
+        context.drawImage(
+          image,
+          sourceCell.x,
+          sourceCell.y,
+          sourceCell.width,
+          sourceCell.height,
+          previewCell.x,
+          previewCell.y,
+          previewCell.width,
+          previewCell.height
+        );
+        context.shadowColor = 'transparent';
+        context.strokeRect(previewCell.x, previewCell.y, previewCell.width, previewCell.height);
+        context.restore();
       });
 
-      context.restore();
+      return;
     }
-  }, [cells, hoveredCell, image, mode, selectedCell]);
 
-  const getCellFromEvent = (event: MouseEvent<HTMLCanvasElement>) => {
+    const transform = getImageTransform(canvas, image);
+    context.drawImage(image, transform.offsetX, transform.offsetY, transform.drawWidth, transform.drawHeight);
+    context.save();
+    context.translate(transform.offsetX, transform.offsetY);
+    context.scale(transform.scale, transform.scale);
+    context.fillStyle = 'rgba(99, 102, 241, 0.12)';
+    context.strokeStyle = '#6366f1';
+    context.lineWidth = 2 / transform.scale;
+    context.setLineDash([8 / transform.scale, 6 / transform.scale]);
+    context.fillRect(gridBounds.x, gridBounds.y, gridBounds.width, gridBounds.height);
+    context.strokeRect(gridBounds.x, gridBounds.y, gridBounds.width, gridBounds.height);
+
+    if (dragStart && dragCurrent) {
+      const dragRect = normalizeRect(dragStart, dragCurrent);
+      context.setLineDash([]);
+      context.fillStyle = 'rgba(249, 115, 22, 0.16)';
+      context.strokeStyle = '#f97316';
+      context.lineWidth = 3 / transform.scale;
+      context.fillRect(dragRect.x, dragRect.y, dragRect.width, dragRect.height);
+      context.strokeRect(dragRect.x, dragRect.y, dragRect.width, dragRect.height);
+    }
+
+    context.restore();
+  }, [cells, dragCurrent, dragStart, gridBounds, hoveredCell, image, mode, selectedCell, settings]);
+
+  const getImagePointFromEvent = (event: MouseEvent<HTMLCanvasElement>) => {
     if (!image) {
       return null;
     }
 
     const canvas = event.currentTarget;
-    const rect = canvas.getBoundingClientRect();
-    const scaleToCanvasX = canvas.width / rect.width;
-    const scaleToCanvasY = canvas.height / rect.height;
-    const canvasX = (event.clientX - rect.left) * scaleToCanvasX;
-    const canvasY = (event.clientY - rect.top) * scaleToCanvasY;
-    const imageScale = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
-    const drawWidth = image.naturalWidth * imageScale;
-    const drawHeight = image.naturalHeight * imageScale;
-    const imageX = (canvasX - (canvas.width - drawWidth) / 2) / imageScale;
-    const imageY = (canvasY - (canvas.height - drawHeight) / 2) / imageScale;
+    const transform = getImageTransform(canvas, image);
+    const point = getCanvasPoint(event);
+    const x = (point.x - transform.offsetX) / transform.scale;
+    const y = (point.y - transform.offsetY) / transform.scale;
 
-    return cells.find(
+    return {
+      x: Math.min(image.naturalWidth, Math.max(0, x)),
+      y: Math.min(image.naturalHeight, Math.max(0, y)),
+      width: 0,
+      height: 0
+    };
+  };
+
+  const getCellFromEvent = (event: MouseEvent<HTMLCanvasElement>) => {
+    const canvas = event.currentTarget;
+    const point = getCanvasPoint(event);
+    const previewCells = getGridPreviewCells(canvas, cells, settings);
+
+    return previewCells.find(
       (cell) =>
-        imageX >= cell.x &&
-        imageX <= cell.x + cell.width &&
-        imageY >= cell.y &&
-        imageY <= cell.y + cell.height
+        point.x >= cell.x &&
+        point.x <= cell.x + cell.width &&
+        point.y >= cell.y &&
+        point.y <= cell.y + cell.height
     ) ?? null;
+  };
+
+  const handleMouseDown = (event: MouseEvent<HTMLCanvasElement>) => {
+    if (mode !== 'full') {
+      return;
+    }
+
+    const point = getImagePointFromEvent(event);
+    if (point) {
+      setDragStart(point);
+      setDragCurrent(point);
+    }
+  };
+
+  const handleMouseMove = (event: MouseEvent<HTMLCanvasElement>) => {
+    if (mode === 'grid') {
+      setHoveredCell(getCellFromEvent(event));
+      return;
+    }
+
+    if (dragStart) {
+      const point = getImagePointFromEvent(event);
+      if (point) {
+        setDragCurrent(point);
+      }
+    }
+  };
+
+  const handleMouseUp = (event: MouseEvent<HTMLCanvasElement>) => {
+    if (mode !== 'full' || !dragStart) {
+      return;
+    }
+
+    const point = getImagePointFromEvent(event);
+    const selectedRect = point ? normalizeRect(dragStart, point) : null;
+    setDragStart(null);
+    setDragCurrent(null);
+
+    if (selectedRect && selectedRect.width >= 4 && selectedRect.height >= 4) {
+      onGridAreaSelect?.(selectedRect);
+    }
   };
 
   return (
     <section className="rounded-[2rem] bg-white/90 p-4 shadow-panel ring-1 ring-slate-200/70">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+          {mode === 'full' && (
+            <p className="text-sm text-slate-500">在原图上拖拽框选网格区域，松开后自动更新参数。</p>
+          )}
+          {mode === 'grid' && <p className="text-sm text-slate-500">按行列展示每个 cell 的裁剪结果。</p>}
+        </div>
         {mode === 'grid' && (
           <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">
             {cells.length} cells
@@ -128,8 +288,14 @@ export function CanvasPreview({
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
         className="aspect-square w-full rounded-3xl border border-slate-200 bg-slate-50 shadow-inner"
-        onMouseMove={(event) => mode === 'grid' && setHoveredCell(getCellFromEvent(event))}
-        onMouseLeave={() => setHoveredCell(null)}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={() => {
+          setHoveredCell(null);
+          setDragStart(null);
+          setDragCurrent(null);
+        }}
         onClick={(event) => mode === 'grid' && onSelectedCellChange?.(getCellFromEvent(event))}
       />
       {mode === 'grid' && (
