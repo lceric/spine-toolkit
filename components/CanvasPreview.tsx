@@ -22,11 +22,34 @@ type ImageTransform = {
 };
 
 type PreviewCell = GridCell & Rect;
+type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+type SelectionHit = ResizeHandle | 'move' | 'outside';
+type DragInteraction = {
+  kind: 'create' | 'move' | 'resize';
+  startPoint: Rect;
+  startRect: Rect;
+  handle?: ResizeHandle;
+};
 
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 720;
 const PREVIEW_PADDING = 28;
 const PREVIEW_GAP = 12;
+const HANDLE_SIZE = 10;
+const MIN_SELECTION_SIZE = 4;
+
+const cursorByHit: Record<SelectionHit, string> = {
+  nw: 'nwse-resize',
+  n: 'ns-resize',
+  ne: 'nesw-resize',
+  e: 'ew-resize',
+  se: 'nwse-resize',
+  s: 'ns-resize',
+  sw: 'nesw-resize',
+  w: 'ew-resize',
+  move: 'move',
+  outside: 'crosshair'
+};
 
 const getImageTransform = (canvas: HTMLCanvasElement, image: HTMLImageElement): ImageTransform => {
   const scale = Math.min(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight);
@@ -57,6 +80,85 @@ const getCanvasPoint = (event: MouseEvent<HTMLCanvasElement>) => {
     x: (event.clientX - rect.left) * (canvas.width / rect.width),
     y: (event.clientY - rect.top) * (canvas.height / rect.height)
   };
+};
+
+const containsPoint = (rect: Rect, point: Rect) =>
+  point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height;
+
+const getSelectionHandles = (rect: Rect, size: number): Array<{ handle: ResizeHandle; rect: Rect }> => {
+  const half = size / 2;
+  const centerX = rect.x + rect.width / 2;
+  const centerY = rect.y + rect.height / 2;
+  const right = rect.x + rect.width;
+  const bottom = rect.y + rect.height;
+
+  return [
+    { handle: 'nw', rect: { x: rect.x - half, y: rect.y - half, width: size, height: size } },
+    { handle: 'n', rect: { x: centerX - half, y: rect.y - half, width: size, height: size } },
+    { handle: 'ne', rect: { x: right - half, y: rect.y - half, width: size, height: size } },
+    { handle: 'e', rect: { x: right - half, y: centerY - half, width: size, height: size } },
+    { handle: 'se', rect: { x: right - half, y: bottom - half, width: size, height: size } },
+    { handle: 's', rect: { x: centerX - half, y: bottom - half, width: size, height: size } },
+    { handle: 'sw', rect: { x: rect.x - half, y: bottom - half, width: size, height: size } },
+    { handle: 'w', rect: { x: rect.x - half, y: centerY - half, width: size, height: size } }
+  ];
+};
+
+const hitTestSelection = (point: Rect, rect: Rect, handleSize: number): SelectionHit => {
+  const handleHit = getSelectionHandles(rect, handleSize).find((item) => containsPoint(item.rect, point));
+  if (handleHit) {
+    return handleHit.handle;
+  }
+
+  return containsPoint(rect, point) ? 'move' : 'outside';
+};
+
+const clampRectToImage = (rect: Rect, image: HTMLImageElement): Rect => {
+  const width = Math.min(image.naturalWidth, Math.max(MIN_SELECTION_SIZE, rect.width));
+  const height = Math.min(image.naturalHeight, Math.max(MIN_SELECTION_SIZE, rect.height));
+
+  return {
+    x: Math.min(image.naturalWidth - width, Math.max(0, rect.x)),
+    y: Math.min(image.naturalHeight - height, Math.max(0, rect.y)),
+    width,
+    height
+  };
+};
+
+const resizeRect = (startRect: Rect, startPoint: Rect, currentPoint: Rect, handle: ResizeHandle): Rect => {
+  const deltaX = currentPoint.x - startPoint.x;
+  const deltaY = currentPoint.y - startPoint.y;
+  const next = { ...startRect };
+
+  if (handle.includes('w')) {
+    next.x = startRect.x + deltaX;
+    next.width = startRect.width - deltaX;
+  }
+  if (handle.includes('e')) {
+    next.width = startRect.width + deltaX;
+  }
+  if (handle.includes('n')) {
+    next.y = startRect.y + deltaY;
+    next.height = startRect.height - deltaY;
+  }
+  if (handle.includes('s')) {
+    next.height = startRect.height + deltaY;
+  }
+
+  if (next.width < MIN_SELECTION_SIZE) {
+    if (handle.includes('w')) {
+      next.x = startRect.x + startRect.width - MIN_SELECTION_SIZE;
+    }
+    next.width = MIN_SELECTION_SIZE;
+  }
+  if (next.height < MIN_SELECTION_SIZE) {
+    if (handle.includes('n')) {
+      next.y = startRect.y + startRect.height - MIN_SELECTION_SIZE;
+    }
+    next.height = MIN_SELECTION_SIZE;
+  }
+
+  return next;
 };
 
 const getGridPreviewCells = (canvas: HTMLCanvasElement, cells: GridCell[], settings: GridSettings): PreviewCell[] => {
@@ -93,8 +195,9 @@ export function CanvasPreview({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [hoveredCell, setHoveredCell] = useState<GridCell | null>(null);
-  const [dragStart, setDragStart] = useState<Rect | null>(null);
-  const [dragCurrent, setDragCurrent] = useState<Rect | null>(null);
+  const [dragInteraction, setDragInteraction] = useState<DragInteraction | null>(null);
+  const [draftRect, setDraftRect] = useState<Rect | null>(null);
+  const [canvasCursor, setCanvasCursor] = useState('crosshair');
   const cells = useMemo(() => getGridCells(settings), [settings]);
   const gridBounds = useMemo(() => getGridBounds(settings), [settings]);
 
@@ -169,29 +272,30 @@ export function CanvasPreview({
     }
 
     const transform = getImageTransform(canvas, image);
+    const activeRect = draftRect ?? gridBounds;
     context.drawImage(image, transform.offsetX, transform.offsetY, transform.drawWidth, transform.drawHeight);
     context.save();
     context.translate(transform.offsetX, transform.offsetY);
     context.scale(transform.scale, transform.scale);
-    context.fillStyle = 'rgba(99, 102, 241, 0.12)';
-    context.strokeStyle = '#6366f1';
-    context.lineWidth = 2 / transform.scale;
-    context.setLineDash([8 / transform.scale, 6 / transform.scale]);
-    context.fillRect(gridBounds.x, gridBounds.y, gridBounds.width, gridBounds.height);
-    context.strokeRect(gridBounds.x, gridBounds.y, gridBounds.width, gridBounds.height);
+    context.fillStyle = dragInteraction ? 'rgba(249, 115, 22, 0.16)' : 'rgba(99, 102, 241, 0.12)';
+    context.strokeStyle = dragInteraction ? '#f97316' : '#6366f1';
+    context.lineWidth = (dragInteraction ? 3 : 2) / transform.scale;
+    context.setLineDash(dragInteraction ? [] : [8 / transform.scale, 6 / transform.scale]);
+    context.fillRect(activeRect.x, activeRect.y, activeRect.width, activeRect.height);
+    context.strokeRect(activeRect.x, activeRect.y, activeRect.width, activeRect.height);
+    context.setLineDash([]);
 
-    if (dragStart && dragCurrent) {
-      const dragRect = normalizeRect(dragStart, dragCurrent);
-      context.setLineDash([]);
-      context.fillStyle = 'rgba(249, 115, 22, 0.16)';
-      context.strokeStyle = '#f97316';
-      context.lineWidth = 3 / transform.scale;
-      context.fillRect(dragRect.x, dragRect.y, dragRect.width, dragRect.height);
-      context.strokeRect(dragRect.x, dragRect.y, dragRect.width, dragRect.height);
-    }
+    const handleSize = HANDLE_SIZE / transform.scale;
+    context.fillStyle = '#ffffff';
+    context.strokeStyle = '#4f46e5';
+    context.lineWidth = 2 / transform.scale;
+    getSelectionHandles(activeRect, handleSize).forEach((item) => {
+      context.fillRect(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+      context.strokeRect(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+    });
 
     context.restore();
-  }, [cells, dragCurrent, dragStart, gridBounds, hoveredCell, image, mode, selectedCell, settings]);
+  }, [cells, draftRect, dragInteraction, gridBounds, hoveredCell, image, mode, selectedCell, settings]);
 
   const getImagePointFromEvent = (event: MouseEvent<HTMLCanvasElement>) => {
     if (!image) {
@@ -226,16 +330,62 @@ export function CanvasPreview({
     ) ?? null;
   };
 
+  const getInteractionRect = (interaction: DragInteraction, point: Rect) => {
+    if (!image) {
+      return null;
+    }
+
+    if (interaction.kind === 'create') {
+      return clampRectToImage(normalizeRect(interaction.startPoint, point), image);
+    }
+
+    if (interaction.kind === 'move') {
+      return clampRectToImage(
+        {
+          ...interaction.startRect,
+          x: interaction.startRect.x + point.x - interaction.startPoint.x,
+          y: interaction.startRect.y + point.y - interaction.startPoint.y
+        },
+        image
+      );
+    }
+
+    if (!interaction.handle) {
+      return null;
+    }
+
+    return clampRectToImage(resizeRect(interaction.startRect, interaction.startPoint, point, interaction.handle), image);
+  };
+
+  const commitRect = (rect: Rect | null) => {
+    if (rect && rect.width >= MIN_SELECTION_SIZE && rect.height >= MIN_SELECTION_SIZE) {
+      onGridAreaSelect?.(rect);
+    }
+  };
+
   const handleMouseDown = (event: MouseEvent<HTMLCanvasElement>) => {
-    if (mode !== 'full') {
+    if (mode !== 'full' || !image) {
       return;
     }
 
     const point = getImagePointFromEvent(event);
-    if (point) {
-      setDragStart(point);
-      setDragCurrent(point);
+    const canvas = event.currentTarget;
+    if (!point) {
+      return;
     }
+
+    const transform = getImageTransform(canvas, image);
+    const hit = hitTestSelection(point, gridBounds, HANDLE_SIZE / transform.scale);
+    const interaction: DragInteraction =
+      hit === 'outside'
+        ? { kind: 'create', startPoint: point, startRect: { ...point, width: 0, height: 0 } }
+        : hit === 'move'
+          ? { kind: 'move', startPoint: point, startRect: gridBounds }
+          : { kind: 'resize', startPoint: point, startRect: gridBounds, handle: hit };
+
+    setDragInteraction(interaction);
+    setDraftRect(interaction.startRect);
+    setCanvasCursor(hit === 'outside' ? 'crosshair' : cursorByHit[hit]);
   };
 
   const handleMouseMove = (event: MouseEvent<HTMLCanvasElement>) => {
@@ -244,27 +394,36 @@ export function CanvasPreview({
       return;
     }
 
-    if (dragStart) {
-      const point = getImagePointFromEvent(event);
-      if (point) {
-        setDragCurrent(point);
-      }
-    }
-  };
-
-  const handleMouseUp = (event: MouseEvent<HTMLCanvasElement>) => {
-    if (mode !== 'full' || !dragStart) {
+    if (!image) {
       return;
     }
 
     const point = getImagePointFromEvent(event);
-    const selectedRect = point ? normalizeRect(dragStart, point) : null;
-    setDragStart(null);
-    setDragCurrent(null);
-
-    if (selectedRect && selectedRect.width >= 4 && selectedRect.height >= 4) {
-      onGridAreaSelect?.(selectedRect);
+    if (!point) {
+      return;
     }
+
+    if (dragInteraction) {
+      const nextRect = getInteractionRect(dragInteraction, point);
+      setDraftRect(nextRect);
+      return;
+    }
+
+    const transform = getImageTransform(event.currentTarget, image);
+    const hit = hitTestSelection(point, gridBounds, HANDLE_SIZE / transform.scale);
+    setCanvasCursor(cursorByHit[hit]);
+  };
+
+  const handleMouseUp = (event: MouseEvent<HTMLCanvasElement>) => {
+    if (mode !== 'full' || !dragInteraction) {
+      return;
+    }
+
+    const point = getImagePointFromEvent(event);
+    const selectedRect = point ? getInteractionRect(dragInteraction, point) : draftRect;
+    commitRect(selectedRect);
+    setDraftRect(null);
+    setDragInteraction(null);
   };
 
   return (
@@ -273,7 +432,9 @@ export function CanvasPreview({
         <div>
           <h2 className="text-lg font-bold text-slate-900">{title}</h2>
           {mode === 'full' && (
-            <p className="text-sm text-slate-500">在原图上拖拽框选网格区域，松开后自动更新参数。</p>
+            <p className="text-sm text-slate-500">
+              拖拽空白处重新框选；拖动框体移动；拖动 8 个控制点调整大小。
+            </p>
           )}
           {mode === 'grid' && <p className="text-sm text-slate-500">按行列展示每个 cell 的裁剪结果。</p>}
         </div>
@@ -288,13 +449,15 @@ export function CanvasPreview({
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
         className="aspect-square w-full rounded-3xl border border-slate-200 bg-slate-50 shadow-inner"
+        style={{ cursor: mode === 'full' ? canvasCursor : 'default' }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={() => {
           setHoveredCell(null);
-          setDragStart(null);
-          setDragCurrent(null);
+          setDraftRect(null);
+          setDragInteraction(null);
+          setCanvasCursor('crosshair');
         }}
         onClick={(event) => mode === 'grid' && onSelectedCellChange?.(getCellFromEvent(event))}
       />
