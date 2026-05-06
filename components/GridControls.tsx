@@ -39,22 +39,22 @@ export function GridControls({ settings, onChange }: GridControlsProps) {
   };
 
   return (
-    <section className="rounded-3xl bg-white/90 p-5 shadow-panel ring-1 ring-slate-200/70">
+    <section className="rounded-[2rem] border border-white/70 bg-white/85 p-5 shadow-panel ring-1 ring-slate-200/70 backdrop-blur">
       <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">参数面板</h2>
-          <p className="text-sm text-slate-500">
+          <h2 className="text-xl font-black text-slate-950">参数面板</h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
             拖动 slider 精调参数，或在左侧原图中框选网格区域后自动回填 origin 与 cell 尺寸。
           </p>
         </div>
-        <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">
+        <span className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-indigo-500/20">
           实时预览
         </span>
       </div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
         {fields.map((field) => (
-          <label key={field.key} className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
-            <div className="mb-2 flex items-center justify-between gap-3">
+          <label key={field.key} className="rounded-[1.35rem] border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-100/60">
+            <div className="mb-3 grid grid-cols-[minmax(0,1fr)_5.75rem] items-center gap-3">
               <div>
                 <span className="block text-sm font-bold text-slate-800">{field.label}</span>
                 <span className="text-xs text-slate-500">{field.hint}</span>
@@ -66,7 +66,7 @@ export function GridControls({ settings, onChange }: GridControlsProps) {
                 step={field.step}
                 value={settings[field.key]}
                 onChange={(event) => updateSetting(field, Number(event.target.value))}
-                className="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-sm font-bold text-slate-800 outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+                className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-right text-sm font-black text-slate-800 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
               />
             </div>
             <input

@@ -65,10 +65,11 @@ export function ExportPanel({ imageUrl, settings, selectedCell }: ExportPanelPro
   };
 
   return (
-    <section className="rounded-3xl bg-slate-950 p-5 text-white shadow-panel">
-      <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
-        <div>
-          <h2 className="text-lg font-bold">导出区域</h2>
+    <section className="overflow-hidden rounded-[2rem] bg-slate-950 p-5 text-white shadow-panel ring-1 ring-slate-800">
+      <div className="relative grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-52 w-52 rounded-full bg-indigo-500/25 blur-3xl" />
+        <div className="relative">
+          <h2 className="text-xl font-black">导出区域</h2>
           <p className="mt-1 text-sm text-slate-300">
             使用离屏 canvas 逐个裁剪网格 cell，命名格式为 name_row_col.png。
           </p>
@@ -78,24 +79,24 @@ export function ExportPanel({ imageUrl, settings, selectedCell }: ExportPanelPro
               value={partName}
               onChange={(event) => setPartName(event.target.value.trim())}
               placeholder="part"
-              className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-semibold text-white outline-none transition placeholder:text-slate-500 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/20"
+              className="w-full rounded-2xl border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-bold text-white outline-none transition placeholder:text-slate-500 focus:border-indigo-300 focus:ring-4 focus:ring-indigo-500/20"
             />
           </label>
           <p className="mt-3 text-sm text-indigo-200">{status}</p>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="relative flex flex-wrap gap-3 lg:justify-end">
           <button
             type="button"
             onClick={() => exportCells(true)}
             disabled={!selectedCell}
-            className="rounded-2xl bg-white/10 px-5 py-3 text-sm font-bold text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-2xl bg-white/10 px-5 py-3 text-sm font-black text-white transition hover:-translate-y-0.5 hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0"
           >
             导出选中 cell
           </button>
           <button
             type="button"
             onClick={() => exportCells(false)}
-            className="rounded-2xl bg-indigo-500 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-400"
+            className="rounded-2xl bg-indigo-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-indigo-500/30 transition hover:-translate-y-0.5 hover:bg-indigo-400"
           >
             导出全部 {cells.length} 个 PNG
           </button>
