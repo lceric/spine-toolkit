@@ -223,7 +223,10 @@ export function CanvasPreview({
     }
 
     context.clearRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = '#f8fafc';
+    const backgroundGradient = context.createLinearGradient(0, 0, canvas.width, canvas.height);
+    backgroundGradient.addColorStop(0, '#f8fafc');
+    backgroundGradient.addColorStop(1, '#eef2ff');
+    context.fillStyle = backgroundGradient;
     context.fillRect(0, 0, canvas.width, canvas.height);
 
     if (!image) {
@@ -430,19 +433,21 @@ export function CanvasPreview({
   };
 
   return (
-    <section className="rounded-[2rem] bg-white/90 p-4 shadow-panel ring-1 ring-slate-200/70">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-white/85 p-4 shadow-panel ring-1 ring-slate-200/70 backdrop-blur">
+      <div className="mb-4 flex items-center justify-between gap-3 px-1">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+          <h2 className="text-xl font-black text-slate-950">{title}</h2>
           {mode === 'full' && (
-            <p className="text-sm text-slate-500">
+            <p className="mt-1 text-sm leading-6 text-slate-500">
               拖拽空白处重新框选；拖动框体移动；拖动 8 个控制点调整大小。
             </p>
           )}
-          {mode === 'grid' && <p className="text-sm text-slate-500">按行列展示每个 cell 的裁剪结果。</p>}
+          {mode === 'grid' && (
+            <p className="mt-1 text-sm leading-6 text-slate-500">按行列展示每个 cell 的裁剪结果。</p>
+          )}
         </div>
         {mode === 'grid' && (
-          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">
+          <span className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-black text-white shadow-lg shadow-indigo-500/20">
             {cells.length} cells
           </span>
         )}
@@ -451,7 +456,7 @@ export function CanvasPreview({
         ref={canvasRef}
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
-        className="aspect-square w-full rounded-3xl border border-slate-200 bg-slate-50 shadow-inner"
+        className="aspect-square w-full rounded-[1.75rem] border border-slate-200 bg-slate-50 shadow-inner ring-1 ring-white"
         style={{ cursor: mode === 'full' ? canvasCursor : 'default' }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -465,7 +470,7 @@ export function CanvasPreview({
         onClick={(event) => mode === 'grid' && onSelectedCellChange?.(getCellFromEvent(event))}
       />
       {mode === 'grid' && (
-        <p className="mt-3 text-sm text-slate-500">
+        <p className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 ring-1 ring-slate-200/70">
           Hover / click 高亮单元格：{hoveredCell ? `row ${hoveredCell.row}, col ${hoveredCell.col}` : '暂无'}
         </p>
       )}
