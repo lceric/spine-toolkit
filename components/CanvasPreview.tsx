@@ -34,7 +34,6 @@ type DragInteraction = {
 const CANVAS_WIDTH = 720;
 const CANVAS_HEIGHT = 720;
 const PREVIEW_PADDING = 28;
-const PREVIEW_GAP = 12;
 const HANDLE_SIZE = 10;
 const MIN_SELECTION_SIZE = 4;
 
@@ -166,18 +165,22 @@ const getGridPreviewCells = (canvas: HTMLCanvasElement, cells: GridCell[], setti
   const cols = Math.max(1, Math.floor(settings.cols));
   const cellWidth = Math.max(1, settings.cellWidth);
   const cellHeight = Math.max(1, settings.cellHeight);
-  const availableWidth = canvas.width - PREVIEW_PADDING * 2 - PREVIEW_GAP * Math.max(0, cols - 1);
-  const availableHeight = canvas.height - PREVIEW_PADDING * 2 - PREVIEW_GAP * Math.max(0, rows - 1);
-  const previewScale = Math.min(availableWidth / (cols * cellWidth), availableHeight / (rows * cellHeight));
-  const previewWidth = cols * cellWidth * previewScale + PREVIEW_GAP * Math.max(0, cols - 1);
-  const previewHeight = rows * cellHeight * previewScale + PREVIEW_GAP * Math.max(0, rows - 1);
+  const gapX = Math.max(0, settings.gapX);
+  const gapY = Math.max(0, settings.gapY);
+  const sourceWidth = cols * cellWidth + Math.max(0, cols - 1) * gapX;
+  const sourceHeight = rows * cellHeight + Math.max(0, rows - 1) * gapY;
+  const availableWidth = canvas.width - PREVIEW_PADDING * 2;
+  const availableHeight = canvas.height - PREVIEW_PADDING * 2;
+  const previewScale = Math.min(availableWidth / sourceWidth, availableHeight / sourceHeight);
+  const previewWidth = sourceWidth * previewScale;
+  const previewHeight = sourceHeight * previewScale;
   const startX = (canvas.width - previewWidth) / 2;
   const startY = (canvas.height - previewHeight) / 2;
 
   return cells.map((cell) => ({
     ...cell,
-    x: startX + cell.col * (cellWidth * previewScale + PREVIEW_GAP),
-    y: startY + cell.row * (cellHeight * previewScale + PREVIEW_GAP),
+    x: startX + cell.col * (cellWidth + gapX) * previewScale,
+    y: startY + cell.row * (cellHeight + gapY) * previewScale,
     width: cell.width * previewScale,
     height: cell.height * previewScale
   }));
