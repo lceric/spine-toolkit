@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { BackgroundTransparencyTool } from '@/components/BackgroundTransparencyTool';
 import { CanvasPreview } from '@/components/CanvasPreview';
 import { ExportPanel } from '@/components/ExportPanel';
 import { GridControls } from '@/components/GridControls';
@@ -44,6 +45,17 @@ export default function Home() {
     }
     setImageName(file.name);
     setImageUrl(URL.createObjectURL(file));
+    setCellOverrides({});
+    setSelectedCell(null);
+  };
+
+  const handleImageProcessed = (blob: Blob, filename: string) => {
+    if (imageUrl) {
+      URL.revokeObjectURL(imageUrl);
+    }
+
+    setImageName(filename);
+    setImageUrl(URL.createObjectURL(blob));
     setCellOverrides({});
     setSelectedCell(null);
   };
@@ -96,7 +108,7 @@ export default function Home() {
                 角色图片网格拆分与 PNG 导出
               </h1>
               <p className="mt-4 max-w-3xl text-base leading-8 text-slate-300">
-                上传完整角色图，框选原图网格区域后快速校准 origin、cell、gap 与 rows/cols；右侧实时预览拆分结果并支持逐格导出。
+                上传完整角色图，可先将纯色背景转为透明，再框选原图网格区域快速校准 origin、cell、gap 与 rows/cols；右侧实时预览拆分结果并支持逐格导出。
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <span className="rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white ring-1 ring-white/10">
@@ -116,6 +128,11 @@ export default function Home() {
 
       <section className="grid flex-1 gap-6 xl:grid-cols-[minmax(28rem,0.92fr)_minmax(34rem,1.08fr)] xl:items-start">
         <div className="grid gap-6">
+          <BackgroundTransparencyTool
+            imageUrl={imageUrl}
+            imageName={imageName}
+            onImageProcessed={handleImageProcessed}
+          />
           <CanvasPreview
             imageUrl={imageUrl}
             settings={settings}

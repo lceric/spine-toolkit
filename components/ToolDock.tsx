@@ -5,6 +5,7 @@ type ToolDockItem = {
   label: string;
   caption: string;
   icon: string;
+  targetId?: string;
   active?: boolean;
   disabled?: boolean;
 };
@@ -16,6 +17,13 @@ const tools: ToolDockItem[] = [
     caption: '当前工具',
     icon: '▦',
     active: true
+  },
+  {
+    id: 'transparent-bg',
+    label: '背景透明',
+    caption: '已接入',
+    icon: '◩',
+    targetId: 'background-transparency-tool'
   },
   {
     id: 'skeleton-check',
@@ -43,6 +51,11 @@ export function ToolDock() {
             type="button"
             disabled={tool.disabled}
             aria-current={tool.active ? 'page' : undefined}
+            onClick={() => {
+              if (tool.targetId) {
+                document.getElementById(tool.targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }
+            }}
             className={`group relative flex min-w-[5.25rem] flex-col items-center gap-2 rounded-[1.45rem] px-3 py-3 text-center transition duration-200 ${
               tool.active
                 ? 'bg-slate-950 text-white shadow-xl shadow-indigo-500/20 -translate-y-1'
