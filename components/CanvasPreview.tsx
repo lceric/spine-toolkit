@@ -1,7 +1,14 @@
 'use client';
 
 import { MouseEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { getGridBounds, getGridCells, type GridCell, type GridSettings, type Rect } from '@/lib/grid';
+import {
+  getGridBounds,
+  getGridCells,
+  type CellOverrides,
+  type GridCell,
+  type GridSettings,
+  type Rect
+} from '@/lib/grid';
 
 type CanvasPreviewProps = {
   imageUrl?: string;
@@ -9,7 +16,9 @@ type CanvasPreviewProps = {
   mode: 'full' | 'grid';
   title: string;
   selectedCell?: GridCell | null;
+  cellOverrides?: CellOverrides;
   onSelectedCellChange?: (cell: GridCell | null) => void;
+  onCellOverrideChange?: (cell: GridCell, rect: Rect) => void;
   onGridAreaSelect?: (rect: Rect) => void;
 };
 
@@ -29,6 +38,13 @@ type DragInteraction = {
   startPoint: Rect;
   startRect: Rect;
   handle?: ResizeHandle;
+};
+type CellDragInteraction = {
+  kind: 'move' | 'resize';
+  startPoint: Rect;
+  startCell: GridCell;
+  handle?: ResizeHandle;
+  previewScale: number;
 };
 
 const CANVAS_WIDTH = 720;
@@ -77,7 +93,9 @@ const getCanvasPoint = (event: MouseEvent<HTMLCanvasElement>) => {
 
   return {
     x: (event.clientX - rect.left) * (canvas.width / rect.width),
-    y: (event.clientY - rect.top) * (canvas.height / rect.height)
+    y: (event.clientY - rect.top) * (canvas.height / rect.height),
+    width: 0,
+    height: 0
   };
 };
 
@@ -160,29 +178,41 @@ const resizeRect = (startRect: Rect, startPoint: Rect, currentPoint: Rect, handl
   return next;
 };
 
-const getGridPreviewCells = (canvas: HTMLCanvasElement, cells: GridCell[], settings: GridSettings): PreviewCell[] => {
-  const rows = Math.max(1, Math.floor(settings.rows));
-  const cols = Math.max(1, Math.floor(settings.cols));
-  const cellWidth = Math.max(1, settings.cellWidth);
-  const cellHeight = Math.max(1, settings.cellHeight);
-  const gapX = Math.max(0, settings.gapX);
-  const gapY = Math.max(0, settings.gapY);
-  const sourceWidth = cols * cellWidth + Math.max(0, cols - 1) * gapX;
-  const sourceHeight = rows * cellHeight + Math.max(0, rows - 1) * gapY;
+const getGridPreviewLayout = (canvas: HTMLCanvasElement, cells: GridCell[]) => {
+  const minX = Math.min(...cells.map((cell) => cell.x));
+  const minY = Math.min(...cells.map((cell) => cell.y));
+  const maxX = Math.max(...cells.map((cell) => cell.x + cell.width));
+  const maxY = Math.max(...cells.map((cell) => cell.y + cell.height));
+  const sourceWidth = Math.max(1, maxX - minX);
+  const sourceHeight = Math.max(1, maxY - minY);
   const availableWidth = canvas.width - PREVIEW_PADDING * 2;
   const availableHeight = canvas.height - PREVIEW_PADDING * 2;
   const previewScale = Math.min(availableWidth / sourceWidth, availableHeight / sourceHeight);
   const previewWidth = sourceWidth * previewScale;
   const previewHeight = sourceHeight * previewScale;
-  const startX = (canvas.width - previewWidth) / 2;
-  const startY = (canvas.height - previewHeight) / 2;
+
+  return {
+    minX,
+    minY,
+    previewScale,
+    startX: (canvas.width - previewWidth) / 2,
+    startY: (canvas.height - previewHeight) / 2
+  };
+};
+
+const getGridPreviewCells = (canvas: HTMLCanvasElement, cells: GridCell[]): PreviewCell[] => {
+  if (cells.length === 0) {
+    return [];
+  }
+
+  const layout = getGridPreviewLayout(canvas, cells);
 
   return cells.map((cell) => ({
     ...cell,
-    x: startX + cell.col * (cellWidth + gapX) * previewScale,
-    y: startY + cell.row * (cellHeight + gapY) * previewScale,
-    width: cell.width * previewScale,
-    height: cell.height * previewScale
+    x: layout.startX + (cell.x - layout.minX) * layout.previewScale,
+    y: layout.startY + (cell.y - layout.minY) * layout.previewScale,
+    width: cell.width * layout.previewScale,
+    height: cell.height * layout.previewScale
   }));
 };
 
@@ -192,16 +222,19 @@ export function CanvasPreview({
   mode,
   title,
   selectedCell,
+  cellOverrides = {},
   onSelectedCellChange,
+  onCellOverrideChange,
   onGridAreaSelect
 }: CanvasPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [hoveredCell, setHoveredCell] = useState<GridCell | null>(null);
   const [dragInteraction, setDragInteraction] = useState<DragInteraction | null>(null);
+  const [cellDragInteraction, setCellDragInteraction] = useState<CellDragInteraction | null>(null);
   const [draftRect, setDraftRect] = useState<Rect | null>(null);
   const [canvasCursor, setCanvasCursor] = useState('crosshair');
-  const cells = useMemo(() => getGridCells(settings), [settings]);
+  const cells = useMemo(() => getGridCells(settings, cellOverrides), [cellOverrides, settings]);
   const gridBounds = useMemo(() => getGridBounds(settings), [settings]);
 
   useEffect(() => {
@@ -214,6 +247,10 @@ export function CanvasPreview({
     nextImage.onload = () => setImage(nextImage);
     nextImage.src = imageUrl;
   }, [imageUrl]);
+
+  useEffect(() => {
+    setCanvasCursor(mode === 'grid' ? 'default' : 'crosshair');
+  }, [mode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -238,7 +275,7 @@ export function CanvasPreview({
     }
 
     if (mode === 'grid') {
-      const previewCells = getGridPreviewCells(canvas, cells, settings);
+      const previewCells = getGridPreviewCells(canvas, cells);
 
       previewCells.forEach((previewCell) => {
         const sourceCell = cells.find((cell) => cell.row === previewCell.row && cell.col === previewCell.col);
@@ -271,6 +308,16 @@ export function CanvasPreview({
         );
         context.shadowColor = 'transparent';
         context.strokeRect(previewCell.x, previewCell.y, previewCell.width, previewCell.height);
+
+        if (active) {
+          context.fillStyle = '#ffffff';
+          context.strokeStyle = '#f97316';
+          context.lineWidth = 2;
+          getSelectionHandles(previewCell, HANDLE_SIZE).forEach((item) => {
+            context.fillRect(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+            context.strokeRect(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+          });
+        }
         context.restore();
       });
 
@@ -325,7 +372,7 @@ export function CanvasPreview({
   const getCellFromEvent = (event: MouseEvent<HTMLCanvasElement>) => {
     const canvas = event.currentTarget;
     const point = getCanvasPoint(event);
-    const previewCells = getGridPreviewCells(canvas, cells, settings);
+    const previewCells = getGridPreviewCells(canvas, cells);
 
     return previewCells.find(
       (cell) =>
@@ -334,6 +381,26 @@ export function CanvasPreview({
         point.y >= cell.y &&
         point.y <= cell.y + cell.height
     ) ?? null;
+  };
+
+  const getCellInteractionHit = (event: MouseEvent<HTMLCanvasElement>) => {
+    const canvas = event.currentTarget;
+    const point = getCanvasPoint(event);
+    const previewCells = getGridPreviewCells(canvas, cells);
+
+    for (const previewCell of previewCells) {
+      const hit = hitTestSelection(point, previewCell, HANDLE_SIZE);
+      if (hit !== 'outside') {
+        const sourceCell = cells.find((cell) => cell.row === previewCell.row && cell.col === previewCell.col);
+        const layout = getGridPreviewLayout(canvas, cells);
+
+        if (sourceCell) {
+          return { hit, sourceCell, previewCell, layout };
+        }
+      }
+    }
+
+    return null;
   };
 
   const getInteractionRect = (interaction: DragInteraction, point: Rect) => {
@@ -370,6 +437,26 @@ export function CanvasPreview({
   };
 
   const handleMouseDown = (event: MouseEvent<HTMLCanvasElement>) => {
+    if (mode === 'grid') {
+      const interactionHit = image ? getCellInteractionHit(event) : null;
+
+      if (interactionHit) {
+        setCellDragInteraction({
+          kind: interactionHit.hit === 'move' ? 'move' : 'resize',
+          startPoint: getCanvasPoint(event),
+          startCell: interactionHit.sourceCell,
+          handle: interactionHit.hit === 'move' ? undefined : interactionHit.hit,
+          previewScale: interactionHit.layout.previewScale
+        });
+        setHoveredCell(interactionHit.sourceCell);
+        onSelectedCellChange?.(interactionHit.sourceCell);
+        setCanvasCursor(cursorByHit[interactionHit.hit]);
+        event.preventDefault();
+      }
+
+      return;
+    }
+
     if (mode !== 'full' || !image) {
       return;
     }
@@ -396,7 +483,36 @@ export function CanvasPreview({
 
   const handleMouseMove = (event: MouseEvent<HTMLCanvasElement>) => {
     if (mode === 'grid') {
+      if (cellDragInteraction) {
+        const point = getCanvasPoint(event);
+        const deltaX = (point.x - cellDragInteraction.startPoint.x) / cellDragInteraction.previewScale;
+        const deltaY = (point.y - cellDragInteraction.startPoint.y) / cellDragInteraction.previewScale;
+        const nextRect =
+          cellDragInteraction.kind === 'move'
+            ? {
+                ...cellDragInteraction.startCell,
+                x: cellDragInteraction.startCell.x + deltaX,
+                y: cellDragInteraction.startCell.y + deltaY
+              }
+            : resizeRect(
+                cellDragInteraction.startCell,
+                { x: 0, y: 0, width: 0, height: 0 },
+                { x: deltaX, y: deltaY, width: 0, height: 0 },
+                cellDragInteraction.handle ?? 'se'
+              );
+        const clampedRect = image ? clampRectToImage(nextRect, image) : nextRect;
+        const nextCell = { ...cellDragInteraction.startCell, ...clampedRect };
+
+        onCellOverrideChange?.(cellDragInteraction.startCell, clampedRect);
+        onSelectedCellChange?.(nextCell);
+        setHoveredCell(nextCell);
+        setCanvasCursor(cellDragInteraction.kind === 'move' ? 'move' : cursorByHit[cellDragInteraction.handle ?? 'se']);
+        return;
+      }
+
+      const interactionHit = image ? getCellInteractionHit(event) : null;
       setHoveredCell(getCellFromEvent(event));
+      setCanvasCursor(interactionHit ? cursorByHit[interactionHit.hit] : 'default');
       return;
     }
 
@@ -421,6 +537,11 @@ export function CanvasPreview({
   };
 
   const handleMouseUp = (event: MouseEvent<HTMLCanvasElement>) => {
+    if (mode === 'grid') {
+      setCellDragInteraction(null);
+      return;
+    }
+
     if (mode !== 'full' || !dragInteraction) {
       return;
     }
@@ -443,7 +564,9 @@ export function CanvasPreview({
             </p>
           )}
           {mode === 'grid' && (
-            <p className="mt-1 text-sm leading-6 text-slate-500">按行列展示每个 cell 的裁剪结果。</p>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              按行列展示裁剪结果；拖动中间移动裁剪框，拖动 8 个控制点调整大小。
+            </p>
           )}
         </div>
         {mode === 'grid' && (
@@ -457,21 +580,27 @@ export function CanvasPreview({
         width={CANVAS_WIDTH}
         height={CANVAS_HEIGHT}
         className="aspect-square w-full rounded-[1.75rem] border border-slate-200 bg-slate-50 shadow-inner ring-1 ring-white"
-        style={{ cursor: mode === 'full' ? canvasCursor : 'default' }}
+        style={{ cursor: mode === 'full' || mode === 'grid' ? canvasCursor : 'default' }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={() => {
           setHoveredCell(null);
+          setCellDragInteraction(null);
           setDraftRect(null);
           setDragInteraction(null);
-          setCanvasCursor('crosshair');
+          setCanvasCursor(mode === 'grid' ? 'default' : 'crosshair');
         }}
         onClick={(event) => mode === 'grid' && onSelectedCellChange?.(getCellFromEvent(event))}
       />
       {mode === 'grid' && (
         <p className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500 ring-1 ring-slate-200/70">
-          Hover / click 高亮单元格：{hoveredCell ? `row ${hoveredCell.row}, col ${hoveredCell.col}` : '暂无'}
+          Hover / click 高亮单元格：
+          {hoveredCell
+            ? `row ${hoveredCell.row}, col ${hoveredCell.col} · ${Math.round(hoveredCell.width)} x ${Math.round(
+                hoveredCell.height
+              )}`
+            : '暂无'}
         </p>
       )}
     </section>

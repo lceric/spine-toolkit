@@ -18,6 +18,8 @@ export type GridCell = {
   height: number;
 };
 
+export type CellOverrides = Record<string, Rect>;
+
 export type Rect = {
   x: number;
   y: number;
@@ -26,6 +28,8 @@ export type Rect = {
 };
 
 const positiveInteger = (value: number) => Math.max(0, Math.floor(Number.isFinite(value) ? value : 0));
+
+export const getCellKey = (cell: Pick<GridCell, 'row' | 'col'>) => `${cell.row}:${cell.col}`;
 
 export function getGridCells({
   originX,
@@ -36,7 +40,7 @@ export function getGridCells({
   gapY,
   rows,
   cols
-}: GridSettings): GridCell[] {
+}: GridSettings, cellOverrides: CellOverrides = {}): GridCell[] {
   const safeRows = positiveInteger(rows);
   const safeCols = positiveInteger(cols);
   const safeCellWidth = Math.max(1, cellWidth);
@@ -45,13 +49,21 @@ export function getGridCells({
 
   for (let row = 0; row < safeRows; row += 1) {
     for (let col = 0; col < safeCols; col += 1) {
-      cells.push({
+      const baseCell = {
         row,
         col,
         x: originX + col * (safeCellWidth + gapX),
         y: originY + row * (safeCellHeight + gapY),
         width: safeCellWidth,
         height: safeCellHeight
+      };
+      const override = cellOverrides[getCellKey(baseCell)];
+
+      cells.push({
+        ...baseCell,
+        ...override,
+        width: Math.max(1, override?.width ?? baseCell.width),
+        height: Math.max(1, override?.height ?? baseCell.height)
       });
     }
   }

@@ -6,21 +6,22 @@ import { ExportPanel } from '@/components/ExportPanel';
 import { GridControls } from '@/components/GridControls';
 import { ImageUploader } from '@/components/ImageUploader';
 import { ToolDock } from '@/components/ToolDock';
-import type { GridCell, GridSettings, Rect } from '@/lib/grid';
+import { getCellKey, type CellOverrides, type GridCell, type GridSettings, type Rect } from '@/lib/grid';
 
 const defaultSettings: GridSettings = {
   originX: 0,
   originY: 0,
   cellWidth: 128,
   cellHeight: 128,
-  gapX: 0,
-  gapY: 0,
+  gapX: 10,
+  gapY: 10,
   rows: 4,
   cols: 4
 };
 
 export default function Home() {
   const [settings, setSettings] = useState<GridSettings>(defaultSettings);
+  const [cellOverrides, setCellOverrides] = useState<CellOverrides>({});
   const [imageUrl, setImageUrl] = useState<string>();
   const [imageName, setImageName] = useState<string>();
   const [selectedCell, setSelectedCell] = useState<GridCell | null>(null);
@@ -43,6 +44,13 @@ export default function Home() {
     }
     setImageName(file.name);
     setImageUrl(URL.createObjectURL(file));
+    setCellOverrides({});
+    setSelectedCell(null);
+  };
+
+  const handleSettingsChange = (nextSettings: GridSettings) => {
+    setSettings(nextSettings);
+    setCellOverrides({});
     setSelectedCell(null);
   };
 
@@ -61,7 +69,18 @@ export default function Home() {
         cellHeight: Math.max(1, Math.round(availableHeight / rows))
       };
     });
+    setCellOverrides({});
     setSelectedCell(null);
+  };
+
+  const handleCellOverrideChange = (cell: GridCell, rect: Rect) => {
+    const nextCell = { ...cell, ...rect };
+
+    setCellOverrides((currentOverrides) => ({
+      ...currentOverrides,
+      [getCellKey(cell)]: rect
+    }));
+    setSelectedCell(nextCell);
   };
 
   return (
@@ -104,7 +123,7 @@ export default function Home() {
             title="原图框选"
             onGridAreaSelect={handleGridAreaSelect}
           />
-          <GridControls settings={settings} onChange={setSettings} />
+          <GridControls settings={settings} onChange={handleSettingsChange} />
         </div>
 
         <div className="grid gap-6 xl:sticky xl:top-6">
@@ -113,10 +132,12 @@ export default function Home() {
             settings={settings}
             mode="grid"
             title="拆分预览"
+            cellOverrides={cellOverrides}
             selectedCell={selectedCell}
             onSelectedCellChange={setSelectedCell}
+            onCellOverrideChange={handleCellOverrideChange}
           />
-          <ExportPanel imageUrl={imageUrl} settings={settings} selectedCell={selectedCell} />
+          <ExportPanel imageUrl={imageUrl} settings={settings} cellOverrides={cellOverrides} selectedCell={selectedCell} />
         </div>
       </section>
     </main>
